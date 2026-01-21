@@ -67,7 +67,14 @@ class ParameterOptimizer:
         initial_index = strength_range.index(
             current_params["cutree"]["cutree-strength"]
         )
-        best_index, best_cost = self.simulated_annealing(video_sequences,'cutree', param_manager, strength_range, initial_index, initial_cost)
+        best_index, best_cost = self.simulated_annealing(
+            video_sequences,
+            "cutree",
+            param_manager,
+            strength_range,
+            initial_index,
+            initial_cost,
+        )
         best_params = copy.deepcopy(current_params)
         best_params["cutree"]["cutree-strength"] = strength_range[best_index]
         # best_params, best_cost = self.ternary_search(
@@ -83,15 +90,15 @@ class ParameterOptimizer:
         best_cost = self.cost_calculator.get_optimal_loss()
         best_params = copy.deepcopy(current_params)
 
-        # self.log("Testing psyrdo module when rd=1...")
-        # mode_1_params = copy.deepcopy(current_params)
-        # mode_1_params["psyrdo"]["rd"] = 1
-        # mode_1_cost = self.cost_calculator.calculate_cost(
-        #     mode_1_params, video_sequences
-        # )
-        # if mode_1_cost < best_cost:
-        #     best_cost = mode_1_cost
-        #     best_params = mode_1_params
+        self.log("Testing psyrdo module when rd=1...")
+        mode_1_params = copy.deepcopy(current_params)
+        mode_1_params["psyrdo"]["rd"] = 1
+        mode_1_cost = self.cost_calculator.calculate_cost(
+            mode_1_params, video_sequences
+        )
+        if mode_1_cost < best_cost:
+            best_cost = mode_1_cost
+            best_params = mode_1_params
 
         self.log("Testing psyrdo module when rd=2...")
         mode_2_params = copy.deepcopy(current_params)
@@ -173,10 +180,15 @@ class ParameterOptimizer:
         current_params = param_manager.get_current_values()
         strength_range = [float(Decimal(i) / Decimal(100)) for i in range(50, 101)]
         initial_cost = self.cost_calculator.get_optimal_loss()
-        initial_index = strength_range.index(
-            current_params["qcomp"]["qcomp"]
+        initial_index = strength_range.index(current_params["qcomp"]["qcomp"])
+        best_index, best_cost = self.simulated_annealing(
+            video_sequences,
+            "qcomp",
+            param_manager,
+            strength_range,
+            initial_index,
+            initial_cost,
         )
-        best_index, best_cost = self.simulated_annealing(video_sequences,'qcomp', param_manager, strength_range, initial_index, initial_cost)
         # best_params, best_cost = self.ternary_search(
         #     video_sequences, "qcomp", param_manager, strength_range
         # )
@@ -497,7 +509,7 @@ class ParameterOptimizer:
         best_cost = initial_cost
         if module_name == "cutree":
             strength_param_name = "cutree-strength"
-            perturbation_range =7
+            perturbation_range = 7
         elif module_name == "qcomp":
             strength_param_name = "qcomp"
             perturbation_range = 10
