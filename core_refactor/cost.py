@@ -169,7 +169,7 @@ class X265CostEvaluator(CostEvaluator):
 
         # --- 4. 运行 ---
         # Debug 模式下开启 stderr 输出
-        print(f"DEBUG Executing: {' '.join(cmd)}")
+        # print(f"DEBUG Executing: {' '.join(cmd)}")
 
         try:
             # 捕获 stderr 以便出错时打印，但平时保持安静
@@ -198,7 +198,7 @@ class X265CostEvaluator(CostEvaluator):
         try:
             # 修改 1: 增加 skipinitialspace=True 自动处理 CSV 中的空格
             df = pd.read_csv(csv_file, skipinitialspace=True)
-            
+
             # --- Debug: 打印 CSV 状态，排查由空文件或解析错误导致的问题 ---
             # print(f"\n[Debug CSV] File: {csv_file}")
             # print(f"Columns found: {list(df.columns)}")
@@ -210,18 +210,22 @@ class X265CostEvaluator(CostEvaluator):
 
             def get_col(name):
                 # 优先精确匹配
-                if name in df.columns: return name
+                if name in df.columns:
+                    return name
                 # 其次模糊匹配
                 for c in df.columns:
-                    if name in c: return c
+                    if name in c:
+                        return c
                 return None
 
             qp_col = get_col("QP")
             bits_col = get_col("Bits")
             # x265 CSV 中通常叫 "Avg Luma Distortion"
             luma_col = get_col("Avg Luma Distortion") or get_col("Luma Distortion")
-            chroma_col = get_col("Avg Chroma Distortion") or get_col("Chroma Distortion")
-            
+            chroma_col = get_col("Avg Chroma Distortion") or get_col(
+                "Chroma Distortion"
+            )
+
             if not all([qp_col, bits_col, luma_col, chroma_col]):
                 print(f"Error: Missing columns in CSV {csv_file}")
                 # 打印出当前有哪些列，方便调试
@@ -229,27 +233,29 @@ class X265CostEvaluator(CostEvaluator):
                 return None
 
             # 强制转换为数值类型，防止因特殊字符导致被识别为 Object
-            avg_qp = pd.to_numeric(df[qp_col], errors='coerce').mean()
-            avg_bits = pd.to_numeric(df[bits_col], errors='coerce').mean()
-            dist_luma = pd.to_numeric(df[luma_col], errors='coerce').mean()
-            dist_chroma = pd.to_numeric(df[chroma_col], errors='coerce').mean()
-            
+            avg_qp = pd.to_numeric(df[qp_col], errors="coerce").mean()
+            avg_bits = pd.to_numeric(df[bits_col], errors="coerce").mean()
+            dist_luma = pd.to_numeric(df[luma_col], errors="coerce").mean()
+            dist_chroma = pd.to_numeric(df[chroma_col], errors="coerce").mean()
+
             # 如果转换后全是 NaN (说明数据有问题)，或者文件本身为空
-            if pd.isna(avg_qp) or pd.isna(avg_bits): 
-                print(f"Error: Invalid data in CSV (NaN values). QP={avg_qp}, Bits={avg_bits}")
+            if pd.isna(avg_qp) or pd.isna(avg_bits):
+                print(
+                    f"Error: Invalid data in CSV (NaN values). QP={avg_qp}, Bits={avg_bits}"
+                )
                 return None
-            
+
             lamda = 0.038 * math.exp(0.234 * avg_qp)
-            height = int(resolution.split('x')[1])
-            width = int(resolution.split('x')[0])
+            height = int(resolution.split("x")[1])
+            width = int(resolution.split("x")[0])
             # 计算 CTU 总数，用于将 Avg Distortion 转换为 Total Distortion
             total_ctu = math.ceil(width / 64) * math.ceil(height / 64)
-            
+
             distortion = (dist_luma + dist_chroma) * total_ctu
             cost = distortion + lamda * avg_bits
-            
-            return cost / height 
-            
+
+            return cost / height
+
         except Exception as e:
             print(f"Error calculating cost for {csv_file}: {e}")
             return None
