@@ -13,7 +13,7 @@ VIDEO_BASE_PATH = "/home/shiyushen/x265_sequence"
 # 假设的x265路径，请按需修改
 X265_EXEC_PATH = "/home/shiyushen/program/x265_4.0/x265_release"
 # 结果输出路径，请按需修改
-RESULT_BASE_PATH = "/home/shiyushen/result/"
+RESULT_BASE_PATH = "/home/shiyushen/result/offline_optimizer/"
 
 
 def load_video_sequences(excel_path):
@@ -54,6 +54,10 @@ def main():
     start_time = time.time()
     print("=== Starting Optimization Process (Refactored) ===")
 
+    if not os.path.exists(RESULT_BASE_PATH):
+        print(f"Creating output directory: {RESULT_BASE_PATH}")
+        os.makedirs(RESULT_BASE_PATH, exist_ok=True)
+
     # 1. 准备数据
     video_data = load_video_sequences(EXCEL_FILE_PATH)
     if not video_data:
@@ -68,10 +72,7 @@ def main():
     evaluator = X265CostEvaluator(base_path=RESULT_BASE_PATH, x265_path=X265_EXEC_PATH)
 
     # 3. 定义优化顺序 (Task 1 Result & PrioritySorter Logic)
-    # 根据 run.py 中的 priorities:
-    #   psyrdo(5) > psyrdoq(4) > qcomp(3) > vaq(2) > cutree(1)
-    # PrioritySorter 按优先级降序排列，因此执行顺序如下：
-    module_order = ["psyrdo", "psyrdoq", "qcomp", "vaq", "cutree"]
+    module_order = ["psyrdo", "qcomp", "psyrdoq", "vaq", "cutree"]
 
     # 初始化优化器
     # 使用新的 RG-BCD 策略 (Relevancy-Guided Block Coordinate Descent)
@@ -135,4 +136,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# python -m core_refactor.runner_example
+# nohup python -m core_refactor.runner_example > run.log 2>&1 &
