@@ -7,7 +7,7 @@ from copy import deepcopy
 class Parameter:
     def __init__(self, name, candidates, current_idx=0):
         self.name = name
-        self.candidates = sorted(candidates)  # 确保有序
+        self.candidates = sorted(candidates)
         self.idx = current_idx
 
     @property
@@ -15,12 +15,9 @@ class Parameter:
         return self.candidates[self.idx]
 
     def set_value(self, value):
-        """通过具体值设置状态"""
-        # 增加一定的容错性（针对浮点精度问题）
         if value in self.candidates:
             self.idx = self.candidates.index(value)
         else:
-            # 尝试寻找最接近的候选项 (针对 Optuna 可能会返回微小误差的 float)
             try:
                 closest_val = min(self.candidates, key=lambda x: abs(x - value))
                 if abs(closest_val - value) < 1e-9:
@@ -31,7 +28,6 @@ class Parameter:
             raise ValueError(f"Value {value} not in candidates for {self.name}")
 
     def get_neighbors(self) -> dict:
-        """获取当前值的左右邻居索引，用于方向搜索"""
         neighbors = {}
         if self.idx > 0:
             neighbors["left"] = self.candidates[self.idx - 1]
@@ -44,48 +40,47 @@ class Parameter:
         self.idx = new_idx
         return self.value
 
-    # === Phase 1 新增接口 ===
     def random_sample(self):
-        """随机选择一个值并更新当前状态"""
         self.idx = random.randint(0, len(self.candidates) - 1)
         return self.value
 
     def to_optuna(self, trial, scope_name):
-        """
-        将此参数注册到 Optuna 的 trial 中。
-        使用 suggest_categorical 以确保严格选取 candidates 中的值。
-        参数名格式: "scope_name/param_name"
-        """
         param_key = f"{scope_name}/{self.name}"
         return trial.suggest_categorical(param_key, self.candidates)
 
 
 class Module:
-    def __init__(self, name, params: list, is_dual=False):
+    def __init__(self, name, params: list, is_dual=False, dependency=None):
         self.name = name
         self.params = {p.name: p for p in params}
         self.is_dual = is_dual
+        # dependency: 一个 lambda 函数，输入为 mode 的值，返回 bool (Strength是否有效)
+        self.dependency = dependency
 
     def get_config(self):
         return {name: p.value for name, p in self.params.items()}
 
-    # === Phase 1 新增接口 ===
     def random_sample(self):
         for p in self.params.values():
             p.random_sample()
 
-    def to_optuna(self, trial):
-        for p in self.params.values():
-            p.to_optuna(trial, self.name)
+    def is_strength_active(self, mode_value):
+        """检查在当前 Mode 值下，Strength 参数是否生效"""
+        if self.dependency:
+            return self.dependency(mode_value)
+        return True
 
 
 class SearchSpace:
     def __init__(self):
         self.modules = {}
+        self.reset()
+
+    def reset(self):
+        self.modules.clear()
         self._init_default_space()
 
     def _init_default_space(self):
-        # 定义生成范围的辅助函数
         def drange(start, stop, step):
             d_start, d_stop, d_step = (
                 Decimal(str(start)),
@@ -100,6 +95,7 @@ class SearchSpace:
             return r
 
         # 1. VAQ (Dual)
+        # 规则: aq-mode=0 时禁用 VAQ，aq-strength 无效
         self.modules["vaq"] = Module(
             "vaq",
             [
@@ -107,9 +103,10 @@ class SearchSpace:
                 Parameter("aq-strength", drange(0.0, 3.0, 0.1), 10),
             ],
             is_dual=True,
+            dependency=lambda mode: mode != 0,
         )
 
-        # 2. CUTree (Single equivalent)
+        # 2. CUTree (Single)
         self.modules["cutree"] = Module(
             "cutree",
             [
@@ -120,16 +117,19 @@ class SearchSpace:
         )
 
         # 3. Psy-RDO (Dual)
+        # 规则: rd < 3 (即1, 2) 时，Psy-RD 无效
         self.modules["psyrdo"] = Module(
             "psyrdo",
             [
-                Parameter("rd", [1, 2, 3, 5], 2),
+                Parameter("rd", [1, 2, 3, 5], 2),  # Default 3
                 Parameter("psy-rd", drange(0.0, 5.0, 0.1), 20),
             ],
             is_dual=True,
+            dependency=lambda mode: mode >= 3,
         )
 
         # 4. Psy-RDOQ (Dual)
+        # 规则: rdoq-level=0 时，Psy-RDOQ 无效
         self.modules["psyrdoq"] = Module(
             "psyrdoq",
             [
@@ -141,6 +141,7 @@ class SearchSpace:
                 ),
             ],
             is_dual=True,
+            dependency=lambda mode: mode != 0,
         )
 
         # 5. QComp (Single)
@@ -149,7 +150,6 @@ class SearchSpace:
         )
 
     def get_all_config(self):
-        """获取当前所有模块的完整参数配置 (嵌套字典结构)"""
         config = {}
         for m_name, module in self.modules.items():
             config[m_name] = module.get_config()
@@ -158,24 +158,16 @@ class SearchSpace:
     def update_module_param(self, module_name, param_name, value):
         self.modules[module_name].params[param_name].set_value(value)
 
-    # === Phase 1 新增接口 ===
     def random_sample(self):
-        """将整个空间的所有参数随机化"""
         for m in self.modules.values():
             m.random_sample()
         return self.get_all_config()
 
     def update_from_flat_dict(self, flat_params):
-        """
-        从扁平字典更新状态 (通常用于接收 Optuna 的结果)
-        flat_params: {'vaq/aq-mode': 1, 'vaq/aq-strength': 0.5, ...}
-        """
         for key, value in flat_params.items():
-            # 解析 "module_name/param_name"
             if "/" not in key:
                 continue
             module_name, param_name = key.split("/", 1)
-
             if module_name in self.modules:
                 module = self.modules[module_name]
                 if param_name in module.params:
