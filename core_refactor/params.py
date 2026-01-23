@@ -45,6 +45,7 @@ class Parameter:
         return self.value
 
     def to_optuna(self, trial, scope_name):
+        """将参数注册到 Optuna Trial"""
         param_key = f"{scope_name}/{self.name}"
         return trial.suggest_categorical(param_key, self.candidates)
 
@@ -69,6 +70,13 @@ class Module:
         if self.dependency:
             return self.dependency(mode_value)
         return True
+
+    # === [修复] 补回丢失的 to_optuna 方法 ===
+    def to_optuna(self, trial):
+        for p in self.params.values():
+            p.to_optuna(trial, self.name)
+
+    # ======================================
 
 
 class SearchSpace:
