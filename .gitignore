@@ -4,3 +4,4 @@ debug_output/
 *.txt
 *.log
 *.csv
+experiment_plots/
